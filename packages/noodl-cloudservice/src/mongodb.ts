@@ -1,141 +1,90 @@
-import Winston from 'winston';
-import { MongoDB } from 'winston-mongodb';
+import mongoose, { Schema, Document, ConnectOptions } from "mongoose";
 
-const MILLISECONDS_IN_A_DAY = 24 * 60 * 60 * 1000;
-
-// This stuff is needed to get the mongo-db transport working
-// https://github.com/winstonjs/winston/issues/1130
-function clone(obj) {
-  var copy = Array.isArray(obj) ? [] : {};
-  for (var i in obj) {
-    if (Array.isArray(obj[i])) {
-      copy[i] = obj[i].slice(0);
-    } else if (obj[i] instanceof Buffer) {
-      copy[i] = obj[i].slice(0);
-    } else if (typeof obj[i] != 'function') {
-      copy[i] = obj[i] instanceof Object ? clone(obj[i]) : obj[i];
-    } else if (typeof obj[i] === 'function') {
-      copy[i] = obj[i];
-    }
-  }
-  return copy;
+// Define the schema for the log document
+interface LogDocument extends Document {
+  level: string;
+  message: string;
+  timestamp: Date;
 }
-require("winston/lib/winston/common").clone = clone;
 
-let Transport = require("winston-transport");
-Transport.prototype.normalizeQuery = function (options) { //
-  options = options || {};
+const logSchema = new Schema({
+  level: String,
+  message: String,
+  timestamp: Date,
+});
 
-  // limit
-  options.rows = options.rows || options.limit || 10;
+// Create the Mongoose model for the log document
+const LogModel = mongoose.model<LogDocument>("Log", logSchema);
 
-  // starting row offset
-  options.start = options.start || 0;
-
-  // now
-  options.until = options.until || new Date;
-  if (typeof options.until !== 'object') {
-    options.until = new Date(options.until);
-  }
-
-  // now - 24
-  options.from = options.from || (options.until - (24 * 60 * 60 * 1000));
-  if (typeof options.from !== 'object') {
-    options.from = new Date(options.from);
-  }
-
-  // 'asc' or 'desc'
-  options.order = options.order || 'desc';
-
-  // which fields to select
-  options.fields = options.fields;
-
-  return options;
-};
-Transport.prototype.formatResults = function (results, _options) {
-  return results;
-};
-
-// Create a logger that will push to mongodb
+// Create a logger that will push to MongoDB
 export class LoggerAdapter {
-  logger: Winston.Logger;
-
-  constructor(options) {
-    const info = new MongoDB({
-      db: options.databaseURI,
-      level: 'info',
-      collection: '_ndl_logs_info',
-      capped: true,
-      cappedSize: 2000000, // 2mb size
-    })
-    // @ts-expect-error
-    info.name = 'logs-info'
-
-    const error = new MongoDB({
-      db: options.databaseURI,
-      level: 'error',
-      collection: '_ndl_logs_error',
-      capped: true,
-      cappedSize: 2000000, // 2mb size
-    })
-    // @ts-expect-error
-    error.name = 'logs-error'
-
-    this.logger = Winston.createLogger({
-      transports: [
-        info,
-        error
-      ]
-    })
-  }
-
-  log() {
-    // Logs from parse are simply passed to console
-    console.log.apply(this, arguments);
-  }
-
-  // This function is used by cloud functions to actually push to log
-  _log() {
-    // Logs from parse are simply passed to console
-    console.log.apply(this, arguments);
-    return this.logger.log.apply(this.logger, arguments);
-  }
-
-  // custom query as winston is currently limited
-  query(options, callback = (_result) => {}) {
-    if (!options) {
-      options = {};
-    }
-
-    // defaults to 7 days prior
-    const from = options.from || new Date(Date.now() - 7 * MILLISECONDS_IN_A_DAY);
-    const until = options.until || new Date();
-    const limit = options.size || 10;
-    const order = options.order || 'desc';
-    const level = options.level || 'info';
-
-    const queryOptions: Winston.QueryOptions = {
-      from,
-      until,
-      limit,
-      order,
-      fields: {}
-    }
-
-    return new Promise((resolve, reject) => {
-      this.logger.query(queryOptions, (err, res) => {
-        if (err) {
-          callback(err);
-          return reject(err);
-        }
-
-        const _res = level === 'error' ? res['logs-error'] : res['logs-info'];
-        _res.forEach(r => delete r.meta)
-
-        callback(_res);
-        resolve(_res);
-
+  constructor(options: { databaseURI: string }) {
+    // Connect to MongoDB
+    mongoose
+      .connect(options.databaseURI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      } as ConnectOptions)
+      .then(() => {
+        console.log("Connected to MongoDB");
+      })
+      .catch((error) => {
+        console.error("Error connecting to MongoDB:", error);
       });
-    });
+  }
+
+  log(...args: any[]) {
+    console.log.apply(this, args);
+  }
+
+  // Log function using Mongoose model
+  async _log(level: string, message: string) {
+    try {
+      const logEntry = new LogModel({
+        level,
+        message,
+        timestamp: new Date(),
+      });
+      await logEntry.save();
+    } catch (error) {
+      console.error("Error saving log:", error);
+    }
+  }
+
+  // Custom query using Mongoose model
+  async query(
+    options: {
+      from?: Date;
+      until?: Date;
+      size?: number;
+      order?: string;
+      level?: string;
+    },
+    callback: (results: LogDocument[]) => void = () => {}
+  ) {
+    const {
+      from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      until = new Date(),
+      size = 10,
+      level = "info",
+    } = options;
+
+    try {
+      const queryOptions = {
+        timestamp: { $gte: from, $lte: until },
+        level,
+      };
+
+      const results = await LogModel.find(queryOptions)
+        .limit(size)
+        .sort({ timestamp: -1 }); // Sorting by timestamp in descending order
+
+      callback(results);
+      return results;
+    } catch (error) {
+      console.error("Error querying logs:", error);
+      callback([]);
+      return [];
+    }
   }
 }
