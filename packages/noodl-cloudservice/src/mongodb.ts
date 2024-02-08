@@ -21,10 +21,7 @@ export class LoggerAdapter {
   constructor(options: { databaseURI: string }) {
     // Connect to MongoDB
     mongoose
-      .connect(options.databaseURI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-      } as ConnectOptions)
+      .connect(options.databaseURI, {} as ConnectOptions)
       .then(() => {
         console.log("Connected to MongoDB");
       })

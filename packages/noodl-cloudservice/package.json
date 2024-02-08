@@ -23,9 +23,8 @@
     "mongodb": "^6.3.0",
     "mongoose": "^8.1.1",
     "node-fetch": "2.6.7",
-    "parse-server": "^4.10.4",
-    "parse-server-gcs-adapter": "git+https://github.com/noodlapp/noodl-parse-server-gcs-adapter.git",
-    "winston-mongodb": "^5.1.1"
+    "parse-server": "^6.4.0",
+    "parse-server-gcs-adapter": "git+https://github.com/noodlapp/noodl-parse-server-gcs-adapter.git"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

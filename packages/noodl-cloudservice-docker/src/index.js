@@ -50,6 +50,8 @@ const noodlServer = createNoodlServer({
   },
 });
 
+noodlServer.noodlServer.server.start();
+
 server.use("/", noodlServer.middleware);
 
 server.listen(port, () => {

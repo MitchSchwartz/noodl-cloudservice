@@ -32,7 +32,9 @@ export function createNoodlParseServer({
   masterKey,
   appId,
   functionOptions,
-  parseOptions = {},
+  parseOptions = {
+    "logLevel": "debug"
+  },
 }: NoodlParseServerOptions): NoodlParseServerResult {
   const serverURL = `http://localhost:${port}/`;
 
